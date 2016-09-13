@@ -1,0 +1,31 @@
+{
+  "name": "source-map-builder",
+  "version": "0.0.2",
+  "description": "A better libaray to consume, generate and merge source maps.",
+  "homepage": "https://github.com/digojs/source-map-builder",
+  "author": "xuld <xuld@vip.qq.com>",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/digojs/source-map-builder"
+  },
+  "keywords": [
+    "source map"
+  ],
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/digojs/source-map-builder/issues",
+    "email": "xuld@vip.qq.com"
+  },
+  "main": "./sourceMap.js",
+  "typings": "./sourceMap.ts",
+  "scripts": {
+    "test": "npm run build && mocha sourceMap-test.js",
+    "build": "tsc sourceMap.ts -t es5",
+    "toc": "doctoc README.md --title \"## Table of Contents\""
+  },
+  "devDependencies": {
+    "doctoc": "^1.2.0",
+    "typescript": "^1.8.0",
+    "mocha": "^2.5.3"
+  }
+}
