@@ -15,7 +15,7 @@ $ npm install source-map-builder
 - [Examples](#examples)
   - [Consuming a source map](#consuming-a-source-map)
   - [Generating a source map](#generating-a-source-map)
-  - [Merging a source map](#merging-a-source-map)
+  - [Merging source maps](#merging-source-maps)
 - [API](#api)
   - [new SourceMapBuilder(sourceMapData?)](#new-sourcemapbuildersourcemapdata)
   - [SourceMapBuilder.prototype.getSource(line, number)](#sourcemapbuilderprototypegetsourceline-number)
@@ -76,7 +76,7 @@ console.log(smb.toJSON());
 //   names: [ 'christopher' ] }
 ```
 
-### Merging a source map
+### Merging source maps
 ```js
 var sourceMap = require("source-map-builder");
 var smb1 = new sourcesmb.SourceMapBuilder();
@@ -92,12 +92,12 @@ An instance of the SourceMapBuilder represents a source map which is being built
 You may pass a raw source map data(eithor a string or a json) if you want to create a source map 
 based on an existing one.
 ```js
-// Create an empty source smb.
-var map = new SourceMapBuilder(); 
+// Create an empty source map.
+var smb = new SourceMapBuilder(); 
 ```
 ```js
-// Creates a source map from an existing source smb.
-var map = new SourceMapBuilder('{"version":3,"file":"source-mapped.js","sources":["foo.js"],"names":["christopher"],"mappings":";;;;;;;;;mCAgCEA"}'); 
+// Creates a source map from an existing source map.
+var smb = new SourceMapBuilder('{"version":3,"file":"source-mapped.js","sources":["foo.js"],"names":["christopher"],"mappings":";;;;;;;;;mCAgCEA"}'); 
 ```
 
 ### SourceMapBuilder.prototype.getSource(line, number)
