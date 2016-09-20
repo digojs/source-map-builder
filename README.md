@@ -47,7 +47,7 @@ var rawSourceMap = {
 };
 
 var sourceMap = require("source-map-builder");
-var smb = new sourcesmb.SourceMapBuilder(rawSourceMap);
+var smb = new sourceMap.SourceMapBuilder(rawSourceMap);
 
 console.log(smb.getSource(1, 28));
 // { sourcePath: 'http://example.com/www/js/two.js',
@@ -63,7 +63,7 @@ smb.eachMapping(function(line, column, sourcePath, sourceContent, sourceLine, so
 ### Generating a source map
 ```js
 var sourceMap = require("source-map-builder");
-var smb = new sourcesmb.SourceMapBuilder({
+var smb = new sourceMap.SourceMapBuilder({
   file: "source-mapped.js"
 });
 
@@ -79,8 +79,8 @@ console.log(smb.toJSON());
 ### Merging source maps
 ```js
 var sourceMap = require("source-map-builder");
-var smb1 = new sourcesmb.SourceMapBuilder();
-var smb2 = new sourcesmb.SourceMapBuilder();
+var smb1 = new sourceMap.SourceMapBuilder();
+var smb2 = new sourceMap.SourceMapBuilder();
 
 smb1.applySourceMap(smb2);
 ```
