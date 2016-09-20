@@ -1,6 +1,6 @@
 {
   "name": "source-map-builder",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "A better libaray to consume, generate and merge source maps.",
   "homepage": "https://github.com/digojs/source-map-builder",
   "author": "xuld <xuld@vip.qq.com>",
