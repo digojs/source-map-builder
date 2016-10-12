@@ -1,11 +1,9 @@
 "use strict";
 /**
  * @fileOverview 源映射
- * @author xuld@vip.qq.com
+ * @author xuld <xuld@vip.qq.com>
  */
-/// <reference path="node.d.ts" />
-var u = require("url");
-var p = require("path");
+var url_1 = require("./url");
 /**
  * 将指定的源映射数据转为源映射字符串。
  * @param sourceMapData 要转换的源映射数据。
@@ -100,7 +98,10 @@ var SourceMapBuilder = (function () {
      * @return 返回源的索引。
      */
     SourceMapBuilder.prototype.addSource = function (sourcePath, sourceContent) {
-        sourcePath = this.sourceRoot ? resolveUrl(this.sourceRoot + "/", sourcePath) : normalizeUrl(sourcePath);
+        if (sourcePath == undefined) {
+            return;
+        }
+        sourcePath = this.sourceRoot ? url_1.resolveUrl(this.sourceRoot + "/", sourcePath) : url_1.normalizeUrl(sourcePath);
         var sourceIndex = this.sources.indexOf(sourcePath);
         if (sourceIndex < 0)
             this.sources[sourceIndex = this.sources.length] = sourcePath;
@@ -114,6 +115,9 @@ var SourceMapBuilder = (function () {
      * @return 返回名字的索引。
      */
     SourceMapBuilder.prototype.addName = function (name) {
+        if (name == undefined) {
+            return;
+        }
         var nameIndex = this.names.indexOf(name);
         if (nameIndex < 0)
             this.names[nameIndex = this.names.length] = name;
@@ -144,14 +148,14 @@ var SourceMapBuilder = (function () {
      */
     SourceMapBuilder.prototype.parse = function (sourceMapObject) {
         if (sourceMapObject.file) {
-            this.file = normalizeUrl(sourceMapObject.file);
+            this.file = url_1.normalizeUrl(sourceMapObject.file);
         }
         if (sourceMapObject.sourceRoot) {
-            this.sourceRoot = sourceMapObject.sourceRoot;
+            this.sourceRoot = sourceMapObject.sourceRoot.replace(/\/$/, "");
         }
         if (sourceMapObject.sources) {
             for (var i = 0; i < sourceMapObject.sources.length; i++) {
-                this.sources[i] = sourceMapObject.sourceRoot ? resolveUrl(sourceMapObject.sourceRoot + "/", sourceMapObject.sources[i]) : normalizeUrl(sourceMapObject.sources[i]);
+                this.sources[i] = sourceMapObject.sourceRoot ? url_1.resolveUrl(sourceMapObject.sourceRoot + "/", sourceMapObject.sources[i]) : url_1.normalizeUrl(sourceMapObject.sources[i]);
             }
         }
         if (sourceMapObject.sourcesContent) {
@@ -220,7 +224,7 @@ var SourceMapBuilder = (function () {
             result.sourceRoot = this.sourceRoot;
         }
         for (var i = 0; i < this.sources.length; i++) {
-            result.sources[i] = this.sourceRoot ? relativeUrl(this.sourceRoot + "/", this.sources[i]) : this.sources[i];
+            result.sources[i] = this.sourceRoot ? url_1.relativeUrl(this.sourceRoot + "/", this.sources[i]) : this.sources[i];
         }
         if (this.sourcesContent && this.sourcesContent.length) {
             result.sourcesContent = this.sourcesContent;
@@ -283,14 +287,17 @@ var SourceMapBuilder = (function () {
             for (var i = mappings.length; --i >= 0;) {
                 var mapping = mappings[i];
                 if (column >= mapping.column) {
-                    return {
+                    var result = {
                         mapping: mapping,
-                        sourcePath: this.sources[mapping.sourceIndex],
-                        sourceContent: this.sourcesContent[mapping.sourceIndex],
+                        sourcePath: mapping.sourceIndex == undefined ? this.file : this.sources[mapping.sourceIndex],
+                        sourceContent: mapping.sourceIndex == undefined ? undefined : this.sourcesContent[mapping.sourceIndex],
                         line: mapping.sourceLine,
-                        column: mapping.sourceColumn + column - mapping.column,
-                        name: this.names[mapping.nameIndex]
+                        column: mapping.sourceColumn + column - mapping.column
                     };
+                    if (column === mapping.column && mapping.nameIndex != undefined) {
+                        result.name = this.names[mapping.nameIndex];
+                    }
+                    return result;
                 }
             }
         }
@@ -300,8 +307,8 @@ var SourceMapBuilder = (function () {
                 var mapping = this.mappings[i][this.mappings[i].length - 1];
                 return {
                     mapping: mapping,
-                    sourcePath: this.sources[mapping.sourceIndex],
-                    sourceContent: this.sourcesContent[mapping.sourceIndex],
+                    sourcePath: mapping.sourceIndex == undefined ? this.file : this.sources[mapping.sourceIndex],
+                    sourceContent: mapping.sourceIndex == undefined ? undefined : this.sourcesContent[mapping.sourceIndex],
                     line: mapping.sourceLine + line - i,
                     column: column
                 };
@@ -356,10 +363,14 @@ var SourceMapBuilder = (function () {
         }
         else {
             for (var i = mappings.length; --i >= 0;) {
-                var mapping_1 = mappings[i];
-                if (column >= mapping_1.column) {
-                    mappings.splice(i, 0, mapping_1);
-                    return mapping_1;
+                if (column >= mappings[i].column) {
+                    if (column === mappings[i].column) {
+                        mappings[i] = mapping;
+                    }
+                    else {
+                        mappings.splice(i + 1, 0, mapping);
+                    }
+                    return mapping;
                 }
             }
             mappings.unshift(mapping);
@@ -377,7 +388,7 @@ var SourceMapBuilder = (function () {
             if (mappings) {
                 for (var j = 0; j < mappings.length; j++) {
                     var mapping = mappings[j];
-                    callback.call(scope, i, mapping.column, this.sources[mapping.sourceIndex], this.sourcesContent[mapping.sourceIndex], mapping.sourceLine, mapping.sourceColumn, this.names[mapping.nameIndex], mapping);
+                    callback.call(scope, i, mapping.column, mapping.sourceIndex == undefined ? this.file : this.sources[mapping.sourceIndex], mapping.sourceIndex == undefined ? undefined : this.sourcesContent[mapping.sourceIndex], mapping.sourceLine, mapping.sourceColumn, this.names[mapping.nameIndex], mapping);
                 }
             }
         }
@@ -423,13 +434,16 @@ var SourceMapBuilder = (function () {
                                         break;
                                     }
                                     // 拷贝 T 多余的映射点到 M。
-                                    mappings.splice(i++, 0, {
+                                    var m = {
                                         column: column,
                                         sourceIndex: this.addSource(other.sources[targetMapping.sourceIndex]),
                                         sourceLine: targetMapping.sourceLine,
-                                        sourceColumn: targetMapping.sourceColumn,
-                                        nameIndex: targetMapping.nameIndex != undefined ? this.addName(other.names[targetMapping.nameIndex]) : undefined
-                                    });
+                                        sourceColumn: targetMapping.sourceColumn
+                                    };
+                                    if (targetMapping.nameIndex != undefined) {
+                                        m.nameIndex = this.addName(other.names[targetMapping.nameIndex]);
+                                    }
+                                    mappings.splice(++i, 0, m);
                                 }
                             }
                         }
@@ -463,7 +477,7 @@ var SourceMapBuilder = (function () {
             if (!mappings[0] || mappings[0].column > 0) {
                 for (var line = start; --line >= 0;) {
                     var last = this.mappings[line] && this.mappings[line][0];
-                    if (last && last.sourceIndex != undefined && last.sourceLine != undefined && last.sourceColumn != undefined) {
+                    if (last && last.sourceLine != undefined && last.sourceColumn != undefined) {
                         mappings.unshift({
                             column: 0,
                             sourceIndex: last.sourceIndex,
@@ -479,7 +493,7 @@ var SourceMapBuilder = (function () {
     return SourceMapBuilder;
 }());
 exports.SourceMapBuilder = SourceMapBuilder;
-var base64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'.split("");
+var base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".split("");
 /**
  * 编码一个 Base64-VLQ 值。
  * @param value 要计算的值。
@@ -535,66 +549,3 @@ function emitSourceMapUrl(content, sourceMapUrl, singleLineComment) {
     return content;
 }
 exports.emitSourceMapUrl = emitSourceMapUrl;
-/**
- * 解析地址对应的绝对地址。
- * @param from 要解析的基地址。
- * @param to 要解析的地址。
- * @returns 返回已解析的地址。
- * @example resolveUrl("a/b/c", "../d") // "a/d"
- */
-function resolveUrl(from, to) {
-    return normalizeUrl(u.resolve(from, to));
-}
-/**
- * 解析地址对应的相对地址。
- * @param from 要解析的基地址。
- * @param to 要解析的地址。
- * @returns 返回已解析的地址。
- * @remark 提供的两个地址必须同时是绝对地址或相对地址。
- * @example relativeUrl("a/b/c", "a/b/d") // "../d"
- */
-function relativeUrl(from, to) {
-    if (from.charCodeAt(0) !== to.charCodeAt(0)) {
-        return to;
-    }
-    var fromParts = normalizeUrl(from).split("/");
-    var toParts = normalizeUrl(to).split("/");
-    var end = fromParts.length - 1;
-    for (var i = 0; i < end; i++) {
-        if (fromParts[i] !== toParts[i]) {
-            break;
-        }
-    }
-    return repeat("../", end - i) + toParts.slice(i).join("/");
-}
-/**
- * 规范指定的地址格式。
- * @param url 要处理的地址。
- * @returns 返回处理后的地址。
- * @example normalizeUrl('abc/') // 'abc/'
- * @example normalizeUrl('./abc.js') // 'abc.js'
- */
-function normalizeUrl(url) {
-    // 不处理自定义协议。
-    if (/^[\w+\-\.]+:(?:[^/]|$)/.test(url)) {
-        return url;
-    }
-    var urlObject = u.parse(url, false, true);
-    if (urlObject.pathname) {
-        urlObject.pathname = p.normalize(urlObject.pathname).replace(/\\/g, "/");
-    }
-    return u.format(urlObject);
-}
-/**
- * 重复指定的字符串指定次数。
- * @param value 要重复的字符串。
- * @param count 重复的次数。
- * @returns 返回重复拼接的字符串。
- */
-function repeat(value, count) {
-    if (value.repeat) {
-        return value.repeat(count);
-    }
-    return count ? new Array(count + 1).join(value) : "";
-}
-exports.repeat = repeat;
