@@ -1,6 +1,6 @@
 {
   "name": "source-map-builder",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "repository": "http://github.com/digojs/source-map-builder",
   "description": "A better libaray to consume, generate and merge source maps.",
   "keywords": [
@@ -14,7 +14,7 @@
     "doctoc": "latest"
   },
   "scripts": {
-    "sync": "tsc ../digo/node_modules/@types/node/index.d.ts ../digo/lib/utility/sourceMap.ts --outDir . -t es5 -d",
+    "sync": "tsc ../digo/lib/utility/sourceMap.ts --outDir . -t es5 -d",
     "test": "node -e \"require('./')\"",
     "toc": "doctoc README.md --title \"## Table of Contents\"",
 	"prepublish": "npm run sync && npm run test && npm run toc"

@@ -1,9 +1,5 @@
 "use strict";
-/**
- * @file 源映射(Source Map)
- * @author xuld <xuld@vip.qq.com>
- */
-var url_1 = require("./url");
+Object.defineProperty(exports, "__esModule", { value: true });
 /**
  * 将指定的源映射数据转为源映射字符串。
  * @param sourceMapData 要转换的源映射数据。
@@ -22,20 +18,21 @@ exports.toSourceMapString = toSourceMapString;
  * @return 返回源映射对象。
  */
 function toSourceMapObject(sourceMapData) {
-    // 为防止 XSS，源数据可能包含 )]}' 前缀。
-    // https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit#
-    var sourceMapObject = typeof sourceMapData === "string" ?
-        JSON.parse(sourceMapData.replace(/^\)]}'/, "")) :
-        sourceMapData.toJSON ?
-            sourceMapData.toJSON() :
-            sourceMapData;
-    if (sourceMapObject.sections) {
-        throw new TypeError("Indexed Map is not implemented yet.");
+    if (typeof sourceMapData === "string") {
+        // 为防止 XSS，源数据可能包含 )]}' 前缀。
+        // https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit#
+        sourceMapData = JSON.parse(sourceMapData.replace(/^\)]}'/, ""));
     }
-    if (sourceMapObject.version && sourceMapObject.version != 3) {
-        throw new TypeError("Source Map v" + sourceMapObject.version + " is not implemented yet.");
+    else if (sourceMapData.toJSON) {
+        sourceMapData = sourceMapData.toJSON();
     }
-    return sourceMapObject;
+    if (sourceMapData.sections) {
+        throw new TypeError("Indexed Map is not supported.");
+    }
+    if (sourceMapData.version && sourceMapData.version != 3) {
+        throw new TypeError("Source Map v" + sourceMapData.version + " is not supported.");
+    }
+    return sourceMapData;
 }
 exports.toSourceMapObject = toSourceMapObject;
 /**
@@ -63,24 +60,84 @@ var SourceMapBuilder = (function () {
      */
     function SourceMapBuilder(sourceMapData) {
         /**
-         * 获取或设置所有源文件路径。
+         * 所有源文件路径。
          */
         this.sources = [];
         /**
-         * 获取或设置所有源文件内容。
+         * 所有源文件内容。
          */
         this.sourcesContent = [];
         /**
-         * 获取或设置所有名称列表。
+         * 所有名称列表。
          */
         this.names = [];
         /**
-         * 获取或设置所有映射点。
+         * 所有映射点。
          */
         this.mappings = [];
         if (sourceMapData) {
-            this.parse(toSourceMapObject(sourceMapData));
+            sourceMapData = toSourceMapObject(sourceMapData);
+            if (sourceMapData.file != undefined) {
+                this.file = sourceMapData.file;
+            }
+            if (sourceMapData.sourceRoot != undefined) {
+                this.sourceRoot = sourceMapData.sourceRoot;
+            }
+            if (sourceMapData.sources) {
+                (_a = this.sources).push.apply(_a, sourceMapData.sources);
+            }
+            if (sourceMapData.sourcesContent) {
+                (_b = this.sourcesContent).push.apply(_b, sourceMapData.sourcesContent);
+            }
+            if (sourceMapData.names) {
+                (_c = this.names).push.apply(_c, sourceMapData.names);
+            }
+            if (sourceMapData.mappings != undefined) {
+                var context = { index: 0 };
+                var line = 0;
+                var mappings = this.mappings[0] = [];
+                var prevColumn = 0;
+                var prevSourceIndex = 0;
+                var prevSourceLine = 0;
+                var prevSourceColumn = 0;
+                var prevNameIndex = 0;
+                while (context.index < sourceMapData.mappings.length) {
+                    var ch = sourceMapData.mappings.charCodeAt(context.index);
+                    if (ch !== 59 /*;*/ && ch !== 44 /*,*/) {
+                        var mapping = {
+                            generatedColumn: prevColumn += decodeBase64Vlq(sourceMapData.mappings, context)
+                        };
+                        mappings.push(mapping);
+                        if (context.index === sourceMapData.mappings.length) {
+                            break;
+                        }
+                        ch = sourceMapData.mappings.charCodeAt(context.index);
+                        if (ch !== 59 /*;*/ && ch !== 44 /*,*/) {
+                            mapping.sourceIndex = prevSourceIndex += decodeBase64Vlq(sourceMapData.mappings, context);
+                            mapping.sourceLine = prevSourceLine += decodeBase64Vlq(sourceMapData.mappings, context);
+                            mapping.sourceColumn = prevSourceColumn += decodeBase64Vlq(sourceMapData.mappings, context);
+                            if (context.index === sourceMapData.mappings.length) {
+                                break;
+                            }
+                            ch = sourceMapData.mappings.charCodeAt(context.index);
+                            if (ch !== 59 /*;*/ && ch !== 44 /*,*/) {
+                                mapping.nameIndex = prevNameIndex += decodeBase64Vlq(sourceMapData.mappings, context);
+                                if (context.index === sourceMapData.mappings.length) {
+                                    break;
+                                }
+                                ch = sourceMapData.mappings.charCodeAt(context.index);
+                            }
+                        }
+                    }
+                    context.index++;
+                    if (ch === 59 /*;*/) {
+                        this.mappings[++line] = mappings = [];
+                        prevColumn = 0;
+                    }
+                }
+            }
         }
+        var _a, _b, _c;
     }
     Object.defineProperty(SourceMapBuilder.prototype, "version", {
         // #region 属性
@@ -92,33 +149,47 @@ var SourceMapBuilder = (function () {
         configurable: true
     });
     /**
+     * 获取指定源文件的索引。
+     * @param sourcePath 要获取的源文件路径。
+     * @return 返回索引。如果找不到则返回 -1。
+     */
+    SourceMapBuilder.prototype.indexOfSource = function (sourcePath) {
+        if (!this.sources.length) {
+            return -1;
+        }
+        var sourceIndex = this.sources.indexOf(sourcePath);
+        if (sourceIndex < 0) {
+            sourcePath = sourcePath.toLowerCase();
+            for (sourceIndex = this.sources.length; --sourceIndex >= 0;) {
+                if (this.sources[sourceIndex].toLowerCase() == sourcePath) {
+                    break;
+                }
+            }
+        }
+        return sourceIndex;
+    };
+    /**
      * 添加一个源文件。
      * @param sourcePath 要添加的源文件路径。
-     * @param sourceContent 要添加的源文件内容。
-     * @return 返回源文件的索引。如果源文件路径为 undefined，则返回 undefined。
+     * @return 返回源文件的索引。
      */
-    SourceMapBuilder.prototype.addSource = function (sourcePath, sourceContent) {
-        if (sourcePath == undefined)
-            return;
-        sourcePath = this.sourceRoot ? url_1.resolveUrl(this.sourceRoot + "/", sourcePath) : url_1.normalizeUrl(sourcePath);
-        var sourceIndex = this.sources.indexOf(sourcePath);
-        if (sourceIndex < 0)
+    SourceMapBuilder.prototype.addSource = function (sourcePath) {
+        var sourceIndex = this.indexOfSource(sourcePath);
+        if (sourceIndex < 0) {
             this.sources[sourceIndex = this.sources.length] = sourcePath;
-        if (sourceContent != undefined)
-            this.sourcesContent[sourceIndex] = sourceContent;
+        }
         return sourceIndex;
     };
     /**
      * 添加一个名称。
      * @param name 要添加的名称。
-     * @return 返回名称的索引。如果名称为 undefined，则返回 undefined。
+     * @return 返回名称的索引。
      */
     SourceMapBuilder.prototype.addName = function (name) {
-        if (name == undefined)
-            return;
         var nameIndex = this.names.indexOf(name);
-        if (nameIndex < 0)
+        if (nameIndex < 0) {
             this.names[nameIndex = this.names.length] = name;
+        }
         return nameIndex;
     };
     /**
@@ -127,84 +198,31 @@ var SourceMapBuilder = (function () {
      * @return 返回源文件的内容。如果未指定指定源文件路径的内容，则返回 undefined。
      */
     SourceMapBuilder.prototype.getSourceContent = function (sourcePath) {
-        return this.sourcesContent[this.sources.indexOf(sourcePath)];
+        var sourceIndex = this.indexOfSource(sourcePath);
+        return sourceIndex < 0 ? undefined : this.sourcesContent[sourceIndex];
     };
     /**
      * 设置指定源文件的内容。
      * @param sourcePath 要设置的源文件路径。
-     * @param content 要设置的源文件内容。
+     * @param sourceContent 要设置的源文件内容。
      */
     SourceMapBuilder.prototype.setSourceContent = function (sourcePath, sourceContent) {
-        var index = this.sources.indexOf(sourcePath);
-        if (index >= 0) {
-            this.sourcesContent[index] = sourceContent;
+        var sourceIndex = this.indexOfSource(sourcePath);
+        if (sourceIndex >= 0) {
+            this.sourcesContent[sourceIndex] = sourceContent;
         }
     };
-    /**
-     * 解析指定的源映射数据并合并到当前构建器。
-     * @param sourceMapObject 要解析的源映射对象。
-     */
-    SourceMapBuilder.prototype.parse = function (sourceMapObject) {
-        if (sourceMapObject.file) {
-            this.file = url_1.normalizeUrl(sourceMapObject.file);
-        }
-        if (sourceMapObject.sourceRoot) {
-            this.sourceRoot = sourceMapObject.sourceRoot;
-        }
-        if (sourceMapObject.sources) {
-            for (var i = 0; i < sourceMapObject.sources.length; i++) {
-                this.sources[i] = sourceMapObject.sourceRoot ? url_1.resolveUrl(sourceMapObject.sourceRoot.replace(/[^\/]$/, "$&/"), sourceMapObject.sources[i]) : url_1.normalizeUrl(sourceMapObject.sources[i]);
-            }
-        }
-        if (sourceMapObject.sourcesContent) {
-            (_a = this.sourcesContent).push.apply(_a, sourceMapObject.sourcesContent);
-        }
-        if (sourceMapObject.names) {
-            (_b = this.names).push.apply(_b, sourceMapObject.names);
-        }
-        if (sourceMapObject.mappings) {
-            var context = { start: 0 };
-            var line = 0;
-            var mappings = this.mappings[0] = [];
-            var prevColumn = 0;
-            var prevSourceIndex = 0;
-            var prevSourceLine = 0;
-            var prevSourceColumn = 0;
-            var prevNameIndex = 0;
-            while (context.start < sourceMapObject.mappings.length) {
-                var ch = sourceMapObject.mappings.charCodeAt(context.start);
-                if (ch !== 59 /*;*/ && ch !== 44 /*,*/) {
-                    var mapping = {
-                        generatedColumn: prevColumn += decodeBase64Vlq(sourceMapObject.mappings, context)
-                    };
-                    mappings.push(mapping);
-                    if (context.start === sourceMapObject.mappings.length)
-                        break;
-                    ch = sourceMapObject.mappings.charCodeAt(context.start);
-                    if (ch !== 59 /*;*/ && ch !== 44 /*,*/) {
-                        mapping.sourceIndex = prevSourceIndex += decodeBase64Vlq(sourceMapObject.mappings, context);
-                        mapping.sourceLine = prevSourceLine += decodeBase64Vlq(sourceMapObject.mappings, context);
-                        mapping.sourceColumn = prevSourceColumn += decodeBase64Vlq(sourceMapObject.mappings, context);
-                        if (context.start === sourceMapObject.mappings.length)
-                            break;
-                        ch = sourceMapObject.mappings.charCodeAt(context.start);
-                        if (ch !== 59 /*;*/ && ch !== 44 /*,*/) {
-                            mapping.nameIndex = prevNameIndex += decodeBase64Vlq(sourceMapObject.mappings, context);
-                            if (context.start === sourceMapObject.mappings.length)
-                                break;
-                            ch = sourceMapObject.mappings.charCodeAt(context.start);
-                        }
-                    }
-                }
-                context.start++;
-                if (ch === 59 /*;*/) {
-                    this.mappings[++line] = mappings = [];
-                    prevColumn = 0;
-                }
-            }
-        }
-        var _a, _b;
-    };
+    Object.defineProperty(SourceMapBuilder.prototype, "hasContentsOfAllSources", {
+        /**
+         * 判断所有源文件是否都包含源码。
+         */
+        get: function () {
+            var _this = this;
+            return this.sources.every(function (source, index) { return _this.sourcesContent[index] != null; });
+        },
+        enumerable: true,
+        configurable: true
+    });
     /**
      * 生成源映射对象。
      * @return 返回源映射对象。
@@ -213,33 +231,30 @@ var SourceMapBuilder = (function () {
         var result = {
             version: this.version
         };
-        if (this.file) {
+        if (this.file != undefined) {
             result.file = this.file;
         }
-        if (this.sourceRoot) {
+        if (this.sourceRoot != undefined) {
             result.sourceRoot = this.sourceRoot;
         }
-        if (this.sources) {
-            result.sources = [];
-            for (var i = 0; i < this.sources.length; i++) {
-                result.sources[i] = this.sourceRoot ? url_1.relativeUrl(this.sourceRoot.replace(/[^\/]$/, "$&/"), this.sources[i]) : this.sources[i];
-            }
-        }
+        result.sources = this.sources;
+        result.mappings = "";
         if (this.mappings && this.mappings.length) {
-            result.mappings = "";
             var prevSourceIndex = 0;
             var prevSourceLine = 0;
             var prevSourceColumn = 0;
             var prevNameIndex = 0;
             for (var i = 0; i < this.mappings.length; i++) {
-                if (i > 0)
+                if (i > 0) {
                     result.mappings += ";";
+                }
                 var mappings = this.mappings[i];
                 if (mappings) {
                     var prevColumn = 0;
                     for (var j = 0; j < mappings.length; j++) {
-                        if (j > 0)
+                        if (j > 0) {
                             result.mappings += ",";
+                        }
                         var mapping = mappings[j];
                         result.mappings += encodeBase64Vlq(mapping.generatedColumn - prevColumn);
                         prevColumn = mapping.generatedColumn;
@@ -259,10 +274,10 @@ var SourceMapBuilder = (function () {
                 }
             }
         }
-        if (this.names && this.names.length) {
+        if (this.names.length) {
             result.names = this.names;
         }
-        if (this.sourcesContent && this.sourcesContent.length) {
+        if (this.sourcesContent.length) {
             result.sourcesContent = this.sourcesContent;
         }
         return result;
@@ -275,80 +290,96 @@ var SourceMapBuilder = (function () {
     // #endregion
     // #region 处理
     /**
-     * 获取生成文件中指定位置的源位置。
+     * 获取生成文件中指定位置的源信息。
      * @param generatedLine 生成文件中的行号(从 0 开始)。
      * @param generatedColumn 生成文件中的列号(从 0 开始)。
+     * @param alignColumn 如果为 true，则计算生成位置到有效映射点的列偏移。
+     * @param alignLine 如果为 true，则计算生成位置到有效映射点的行偏移。
      * @return 返回包含源文件路径、内容、行列号等信息的源位置对象。
      */
-    SourceMapBuilder.prototype.getSource = function (generatedLine, generatedColumn) {
+    SourceMapBuilder.prototype.getSource = function (generatedLine, generatedColumn, alignColumn, alignLine) {
+        if (alignColumn === void 0) { alignColumn = false; }
+        if (alignLine === void 0) { alignLine = false; }
         // 搜索当前行指定列的映射。
         var mappings = this.mappings[generatedLine];
         if (mappings) {
             for (var i = mappings.length; --i >= 0;) {
                 var mapping = mappings[i];
                 if (generatedColumn >= mapping.generatedColumn) {
-                    return {
-                        mapping: mapping,
-                        sourcePath: mapping.sourceIndex == undefined ? this.file : this.sources[mapping.sourceIndex],
-                        sourceContent: mapping.sourceIndex == undefined ? undefined : this.sourcesContent[mapping.sourceIndex],
-                        line: mapping.sourceLine,
-                        column: mapping.sourceColumn + generatedColumn - mapping.generatedColumn,
-                        name: mapping.nameIndex == undefined ? undefined : this.names[mapping.nameIndex]
-                    };
+                    var result = { mapping: mapping };
+                    if (mapping.sourceIndex != undefined) {
+                        result.sourcePath = this.sources[mapping.sourceIndex];
+                        result.line = mapping.sourceLine;
+                        result.column = mapping.sourceColumn + (alignColumn ? generatedColumn - mapping.generatedColumn : 0);
+                        if (mapping.nameIndex != undefined) {
+                            result.name = this.names[mapping.nameIndex];
+                        }
+                    }
+                    return result;
                 }
             }
         }
-        // 当前行不存在对应的映射，搜索上一行的映射信息。
-        for (var i = generatedLine; --i >= 0;) {
-            var mappings_1 = this.mappings[i];
-            if (mappings_1 && mappings_1.length) {
-                var mapping = mappings_1[mappings_1.length - 1];
-                return {
-                    mapping: mapping,
-                    sourcePath: mapping.sourceIndex == undefined ? this.file : this.sources[mapping.sourceIndex],
-                    sourceContent: mapping.sourceIndex == undefined ? undefined : this.sourcesContent[mapping.sourceIndex],
-                    line: mapping.sourceLine + generatedLine - i,
-                    column: generatedColumn,
-                    name: mapping.nameIndex == undefined ? undefined : this.names[mapping.nameIndex]
-                };
+        // 当前行不存在对应的映射，就近搜索映射信息。
+        if (alignLine) {
+            for (var i = generatedLine; --i >= 0;) {
+                var mappings_1 = this.mappings[i];
+                if (mappings_1 && mappings_1.length) {
+                    var mapping = mappings_1[mappings_1.length - 1];
+                    var result = { mapping: mapping };
+                    if (mapping.sourceIndex != undefined) {
+                        result.sourcePath = this.sources[mapping.sourceIndex];
+                        result.line = mapping.sourceLine + generatedLine - i;
+                        result.column = alignColumn ? generatedColumn : 0;
+                        if (mapping.nameIndex != undefined) {
+                            result.name = this.names[mapping.nameIndex];
+                        }
+                    }
+                    return result;
+                }
             }
         }
-        // 找不到映射点，直接返回源位置。
-        return {
-            sourcePath: this.file,
-            line: generatedLine,
-            column: generatedColumn,
-        };
     };
     /**
      * 获取源文件中指定位置生成后的所有位置。
      * @param sourcePath 要获取的源文件路径。
      * @param sourceLine 源文件中的行号(从 0 开始)。
-     * @param sourceColumn 源文件中的列号(从 0 开始)。
+     * @param sourceColumn 源文件中的列号(从 0 开始)。如果未提供则返回当期行所有列的生成信息。
      * @return 返回所有生成文件中的行列信息。
      */
-    SourceMapBuilder.prototype.getGenerated = function (sourcePath, sourceLine, sourceColumn) {
+    SourceMapBuilder.prototype.getAllGenerated = function (sourcePath, sourceLine, sourceColumn) {
         var result = [];
-        var sourceIndex = this.sources.indexOf(sourcePath);
+        var sourceIndex = this.indexOfSource(sourcePath);
         if (sourceIndex >= 0) {
+            var minColumnOffset = Infinity;
             for (var i = 0; i < this.mappings.length; i++) {
                 var mappings = this.mappings[i];
                 if (mappings) {
-                    for (var j = 0; j < mappings.length; j++) {
-                        var mapping = mappings[j];
-                        if (mapping.sourceIndex === sourceIndex &&
-                            mapping.sourceLine === sourceLine &&
-                            mapping.sourceColumn <= sourceColumn) {
-                            var generatedColumn = mapping.generatedColumn + sourceColumn - mapping.sourceColumn;
-                            if (j + 1 >= mappings.length || generatedColumn < mappings[j + 1].generatedColumn) {
+                    for (var _i = 0, mappings_2 = mappings; _i < mappings_2.length; _i++) {
+                        var mapping = mappings_2[_i];
+                        if (mapping.sourceIndex === sourceIndex && mapping.sourceLine === sourceLine) {
+                            // 如果列为空则只需满足行。
+                            if (sourceColumn == undefined) {
                                 result.push({
                                     mapping: mapping,
-                                    sourcePath: sourcePath,
-                                    sourceContent: this.sourcesContent[sourceIndex],
                                     line: i,
-                                    column: generatedColumn,
-                                    name: this.names[mapping.nameIndex],
+                                    column: mapping.generatedColumn
                                 });
+                            }
+                            else {
+                                // 需要找到指定的源位置之前但更近或者一样近的映射点。
+                                var columnOffset = sourceColumn - mapping.sourceColumn;
+                                if (columnOffset >= 0 && columnOffset <= minColumnOffset) {
+                                    // 当找到更近的映射点时，只保留最近的映射点。
+                                    if (columnOffset !== minColumnOffset) {
+                                        result.length = 0;
+                                    }
+                                    result.push({
+                                        mapping: mapping,
+                                        line: i,
+                                        column: mapping.generatedColumn
+                                    });
+                                    minColumnOffset = columnOffset;
+                                }
                             }
                         }
                     }
@@ -356,6 +387,21 @@ var SourceMapBuilder = (function () {
             }
         }
         return result;
+    };
+    /**
+     * 遍历所有映射点。
+     * @param callback 遍历的回调函数。
+     */
+    SourceMapBuilder.prototype.eachMapping = function (callback) {
+        for (var i = 0; i < this.mappings.length; i++) {
+            var mappings = this.mappings[i];
+            if (mappings) {
+                for (var _i = 0, mappings_3 = mappings; _i < mappings_3.length; _i++) {
+                    var mapping = mappings_3[_i];
+                    callback(i, mapping.generatedColumn, mapping.sourceIndex == undefined ? undefined : this.sources[mapping.sourceIndex], mapping.sourceIndex == undefined ? undefined : this.sourcesContent[mapping.sourceIndex], mapping.sourceLine, mapping.sourceColumn, mapping.nameIndex == undefined ? undefined : this.names[mapping.nameIndex], mapping);
+                }
+            }
+        }
     };
     /**
      * 添加一个映射点。
@@ -372,7 +418,7 @@ var SourceMapBuilder = (function () {
         var mapping = {
             generatedColumn: generatedColumn
         };
-        if (sourcePath != undefined && sourceLine != undefined && sourceColumn != undefined) {
+        if (sourcePath != undefined) {
             mapping.sourceIndex = this.addSource(sourcePath);
             mapping.sourceLine = sourceLine;
             mapping.sourceColumn = sourceColumn;
@@ -405,81 +451,44 @@ var SourceMapBuilder = (function () {
         return mapping;
     };
     /**
-     * 遍历所有映射点。
-     * @param callback 遍历的回调函数。
-     */
-    SourceMapBuilder.prototype.eachMapping = function (callback) {
-        for (var i = 0; i < this.mappings.length; i++) {
-            var mappings = this.mappings[i];
-            if (mappings) {
-                for (var j = 0; j < mappings.length; j++) {
-                    var mapping = mappings[j];
-                    callback(i, mapping.generatedColumn, mapping.sourceIndex == undefined ? this.file : this.sources[mapping.sourceIndex], mapping.sourceIndex == undefined ? undefined : this.sourcesContent[mapping.sourceIndex], mapping.sourceLine, mapping.sourceColumn, mapping.nameIndex == undefined ? undefined : this.names[mapping.nameIndex], mapping);
-                }
-            }
-        }
-    };
-    /**
-     * 应用指定的源映射并更新当前源映射。
-     * @param other 要应用的源映射。
-     * @param file *other* 对应的生成文件路径。如果未提供将使用 *other.file*。
+     * 根据指定的源映射更新当前源映射。
+     * @param other 要合并的源映射。
+     * @param file 要合并的源映射所属的生成文件。
      * @desc
      * 假如有源文件 A，通过一次生成得到 B，其源映射记作 T。
-     * 现在基于 B，通过第二次生成得到 C，其源映射记作 M。
+     * 然后基于 B，通过第二次生成得到 C，其源映射记作 M。
      * 那么就需要调用 `M.applySourceMap(T)`，将 M 更新为 A 到 C 的源映射。
      */
     SourceMapBuilder.prototype.applySourceMap = function (other, file) {
-        // 合并映射表的算法为：
-        // 对于 M 中的每一条映射 p，如果 p.source 同 T.file，
-        // 则将其源行列号更新为 T 中指定的源码和源行列号。
         if (file === void 0) { file = other.file; }
-        // 只有源索引为 expectedSourceIndex 的映射才能基于 T 更新。
-        var expectedSourceIndex = file != undefined ? this.sources.indexOf(file) : 0;
-        if (expectedSourceIndex < 0)
-            return;
-        for (var _i = 0, _a = this.mappings; _i < _a.length; _i++) {
-            var mappings = _a[_i];
-            if (mappings) {
-                for (var i = 0; i < mappings.length; i++) {
-                    var mapping = mappings[i];
-                    if (mapping.sourceIndex === expectedSourceIndex) {
-                        // 下一个映射点。
-                        var nextColumn = i + 1 < mappings.length && mappings[i + 1].generatedColumn || Infinity;
-                        // 在 M 中 mapping.column 到 nextColumn 之间不存在其它映射。
-                        // 但是在 T 中对应的区间则可能包含多个映射，这些映射要重新拷贝到 M。
-                        if (other.mappings[mapping.sourceLine]) {
-                            for (var _b = 0, _c = other.mappings[mapping.sourceLine]; _b < _c.length; _b++) {
-                                var targetMapping = _c[_b];
-                                if (targetMapping.generatedColumn > mapping.sourceColumn) {
-                                    // 根据 T 中的列号反推 M 的索引：
-                                    // mapping.column -> mapping.sourceColumn
-                                    // ? -> targetMapping.column
-                                    var column = mapping.generatedColumn + targetMapping.generatedColumn - mapping.sourceColumn;
-                                    // M 中已经指定了 column 的映射，忽略 T 的剩余映射。
-                                    if (column >= nextColumn) {
-                                        break;
-                                    }
-                                    // 拷贝 T 多余的映射点到 M。
-                                    var m = {
-                                        generatedColumn: column,
-                                        sourceIndex: this.addSource(other.sources[targetMapping.sourceIndex]),
-                                        sourceLine: targetMapping.sourceLine,
-                                        sourceColumn: targetMapping.sourceColumn
-                                    };
-                                    if (targetMapping.nameIndex != undefined) {
-                                        m.nameIndex = this.addName(other.names[targetMapping.nameIndex]);
-                                    }
-                                    mappings.splice(++i, 0, m);
+        var sourceIndex = file != undefined ? this.indexOfSource(file) : 0;
+        if (sourceIndex >= 0) {
+            this.sources.splice(sourceIndex, 1);
+            this.sourcesContent.splice(sourceIndex, 1);
+            for (var _i = 0, _a = this.mappings; _i < _a.length; _i++) {
+                var mappings = _a[_i];
+                if (mappings) {
+                    for (var _b = 0, mappings_4 = mappings; _b < mappings_4.length; _b++) {
+                        var mapping = mappings_4[_b];
+                        if (mapping.sourceIndex === sourceIndex) {
+                            var source = other.getSource(mapping.sourceLine, mapping.sourceColumn, true, true);
+                            if (source && source.sourcePath != undefined) {
+                                mapping.sourceIndex = this.addSource(source.sourcePath);
+                                mapping.sourceLine = source.line;
+                                mapping.sourceColumn = source.column;
+                                if (source.name != undefined) {
+                                    mapping.nameIndex = this.addName(source.name);
+                                }
+                                else {
+                                    delete mapping.nameIndex;
                                 }
                             }
-                        }
-                        // 更新当前映射信息。
-                        var source = other.getSource(mapping.sourceLine, mapping.sourceColumn);
-                        mapping.sourceIndex = this.addSource(source.sourcePath);
-                        mapping.sourceLine = source.line;
-                        mapping.sourceColumn = source.column;
-                        if (source.name != undefined) {
-                            mapping.nameIndex = this.addName(source.name);
+                            else {
+                                delete mapping.sourceIndex;
+                                delete mapping.sourceLine;
+                                delete mapping.sourceColumn;
+                                delete mapping.nameIndex;
+                            }
                         }
                     }
                 }
@@ -503,13 +512,15 @@ var SourceMapBuilder = (function () {
             if (!mappings[0] || mappings[0].generatedColumn > 0) {
                 for (var line = startLine; --line >= 0;) {
                     var last = this.mappings[line] && this.mappings[line][0];
-                    if (last && last.sourceLine != undefined && last.sourceColumn != undefined) {
-                        mappings.unshift({
-                            generatedColumn: 0,
-                            sourceIndex: last.sourceIndex,
-                            sourceLine: last.sourceLine + startLine - line,
-                            sourceColumn: 0
-                        });
+                    if (last) {
+                        if (last.sourceIndex != undefined) {
+                            mappings.unshift({
+                                generatedColumn: 0,
+                                sourceIndex: last.sourceIndex,
+                                sourceLine: last.sourceLine + startLine - line,
+                                sourceColumn: 0
+                            });
+                        }
                         break;
                     }
                 }
@@ -529,7 +540,7 @@ function encodeBase64Vlq(value) {
     var result = "";
     var vlq = value < 0 ? ((-value) << 1) + 1 : (value << 1);
     do {
-        var digit = vlq & 31;
+        var digit = vlq & 31 /*(1<<5)-1*/;
         vlq >>>= 5;
         result += base64Chars[vlq > 0 ? digit | 32 /*1<<5*/ : digit];
     } while (vlq > 0);
@@ -544,9 +555,10 @@ function encodeBase64Vlq(value) {
 function decodeBase64Vlq(value, context) {
     var vlq = 0;
     var shift = 0;
+    var digit;
     do {
-        var ch = value.charCodeAt(context.start++);
-        var digit = 65 /*A*/ <= ch && ch <= 90 /*Z*/ ? ch - 65 /*A*/ :
+        var ch = value.charCodeAt(context.index++);
+        digit = 65 /*A*/ <= ch && ch <= 90 /*Z*/ ? ch - 65 /*A*/ :
             97 /*a*/ <= ch && ch <= 122 /*z*/ ? ch - 71 /*'a' - 26*/ :
                 48 /*0*/ <= ch && ch <= 57 /*9*/ ? ch + 4 /*'0' - 26*/ :
                     ch === 43 /*+*/ ? 62 :
@@ -574,8 +586,19 @@ function emitSourceMapUrl(content, sourceMapUrl, singleLineComment) {
         return "";
     });
     if (!found && sourceMapUrl) {
-        content += singleLineComment ? "\n//# sourceMappingURL=" + sourceMapUrl : "\n/*# sourceMappingURL=" + sourceMapUrl + " */";
+        content = appendSourceMapUrl(content, sourceMapUrl, singleLineComment);
     }
     return content;
 }
 exports.emitSourceMapUrl = emitSourceMapUrl;
+/**
+ * 在指定内容末尾插入一个 #sourceMappingURL 注释。
+ * @param content 要插入或更新的内容。
+ * @param sourceMapUrl 要插入或更新的源映射地址。如果地址为空则删除已存在的注释。
+ * @param singleLineComment 如果为 true 则使用单行注释，否则使用多行注释。
+ * @return 返回已更新的内容。
+ */
+function appendSourceMapUrl(content, sourceMapUrl, singleLineComment) {
+    return content + (singleLineComment ? "\n//# sourceMappingURL=" + sourceMapUrl : "\n/*# sourceMappingURL=" + sourceMapUrl + " */");
+}
+exports.appendSourceMapUrl = appendSourceMapUrl;
